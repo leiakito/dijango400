@@ -14,6 +14,7 @@
             <el-icon><Document /></el-icon>
             浏览攻略
           </el-button>
+      
         </div>
       </div>
     </div>
@@ -54,7 +55,7 @@
               <!-- 评分标签 -->
               <div class="rating-badge">
                 <el-icon><StarFilled /></el-icon>
-                <span>{{ game.rating || 'N/A' }}</span>
+                <span>{{ game.rating === null || game.rating === undefined ? 'N/A' : Number(game.rating).toFixed(1) }}</span>
               </div>
               <!-- 分类标签 -->
               <div class="category-badge">
@@ -182,6 +183,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getHotGames } from '@/api/game'
 import { getStrategyList } from '@/api/content'
 import { getPostList } from '@/api/community'
@@ -199,7 +201,8 @@ import {
   ArrowRight,
   User,
   TrendCharts,
-  Share
+  Share,
+  RefreshRight
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -212,6 +215,10 @@ const strategiesLoading = ref(false)
 
 const recentPosts = ref<any[]>([])
 const postsLoading = ref(false)
+const refreshing = ref(false)
+
+// 延迟辅助（用于模拟慢速抓取和二次加载）
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 
 // 格式化数字
@@ -242,8 +249,8 @@ const formatTime = (time: string) => {
   return date.toLocaleDateString()
 }
 
-// 获取热门游戏
-const fetchHotGames = async () => {
+// 获取热门游戏（可选慢速模式）
+const fetchHotGames = async (slow = false) => {
   hotGamesLoading.value = true
   try {
     const response = await getHotGames({ top: 8 })
@@ -252,12 +259,13 @@ const fetchHotGames = async () => {
     console.warn('获取热门游戏失败:', error)
     hotGames.value = []
   } finally {
+    if (slow) await delay(2400)
     hotGamesLoading.value = false
   }
 }
 
-// 获取最新攻略
-const fetchLatestStrategies = async () => {
+// 获取最新攻略（可选慢速模式）
+const fetchLatestStrategies = async (slow = false) => {
   strategiesLoading.value = true
   try {
     const response = await getStrategyList({ page_size: 6, ordering: '-created_at' })
@@ -266,12 +274,13 @@ const fetchLatestStrategies = async () => {
     console.warn('获取最新攻略失败:', error)
     latestStrategies.value = []
   } finally {
+    if (slow) await delay(2400)
     strategiesLoading.value = false
   }
 }
 
-// 获取最新动态
-const fetchRecentPosts = async () => {
+// 获取最新动态（可选慢速模式）
+const fetchRecentPosts = async (slow = false) => {
   postsLoading.value = true
   try {
     const response = await getPostList({ page_size: 5, ordering: '-created_at' })
@@ -280,6 +289,7 @@ const fetchRecentPosts = async () => {
     console.warn('获取社区动态失败:', error)
     recentPosts.value = []
   } finally {
+    if (slow) await delay(2400)
     postsLoading.value = false
   }
 }
@@ -289,10 +299,12 @@ const goToGameDetail = (id: number) => router.push(`/games/${id}`)
 const goToStrategyDetail = (id: number) => router.push(`/strategies/${id}`)
 const goToPostDetail = (id: number) => router.push(`/community/posts/${id}`)
 
+
 onMounted(() => {
-  fetchHotGames()
-  fetchLatestStrategies()
-  fetchRecentPosts()
+  // 首次加载依旧快速
+  fetchHotGames(false)
+  fetchLatestStrategies(false)
+  fetchRecentPosts(false)
 })
 </script>
 
@@ -357,6 +369,9 @@ onMounted(() => {
             transform: translateY(-2px);
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
           }
+        }
+        .spinning {
+          animation: spin 0.8s linear infinite;
         }
       }
     }
@@ -676,6 +691,11 @@ onMounted(() => {
       }
     }
   }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 // 响应式

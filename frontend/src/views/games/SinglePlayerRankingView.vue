@@ -1,5 +1,30 @@
 <template>
   <div class="ranking-page" v-loading="loading">
+    <!-- 抓取覆盖层 -->
+    <transition name="overlay-fade">
+      <div v-if="showRefreshOverlay" class="refresh-overlay">
+        <div class="overlay-card">
+          <h3 class="overlay-title">抓取中</h3>
+          <p class="overlay-sub">正在连接数据源并拉取榜单…</p>
+
+          <el-steps :active="refreshStep" finish-status="success">
+            <el-step title="准备连接" />
+            <el-step title="抓取榜单" />
+            <el-step title="数据合并" />
+            <el-step title="渲染完成" />
+          </el-steps>
+
+          <div class="overlay-progress">
+            <el-progress :percentage="progress" :stroke-width="10" status="success" />
+          </div>
+
+          <div class="overlay-spinner">
+            <el-icon :class="{ spinning: true }"><Refresh /></el-icon>
+            <span>抓取进行中…</span>
+          </div>
+        </div>
+      </div>
+    </transition>
     <div class="page-header">
       <div>
         <p class="eyebrow">业务定时任务 · 每5分钟刷新</p>
@@ -7,7 +32,7 @@
         <p class="subtext">数据来源：3DM（自动抓取），点击可跳转专题或平台内详情</p>
       </div>
       <div class="actions">
-        <el-button :icon="Refresh" @click="fetchData" :loading="loading">手动刷新</el-button>
+        <el-button :icon="Refresh" @click="handleRefresh" :loading="loading || refreshing">手动刷新</el-button>
       </div>
     </div>
 
@@ -93,9 +118,15 @@ import { getSinglePlayerRanking } from '@/api/game'
 import { getPlaceholderImage, handleImageError } from '@/utils/image'
 import type { SinglePlayerRanking } from '@/types/game'
 import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 const rankings = ref<SinglePlayerRanking[]>([])
 const loading = ref(false)
+const refreshing = ref(false)
+const showRefreshOverlay = ref(false)
+const refreshStep = ref(0)
+const progress = ref(0)
+let progressTimer: number | null = null
 const router = useRouter()
 
 const formatNumber = (num?: number | null) => {
@@ -120,13 +151,70 @@ const openExternal = (url?: string | null) => {
   }
 }
 
-const fetchData = async () => {
+// 将未知响应转换为榜单数组，兼容数组或 { results: [] }
+const toRankingArray = (resp: unknown): SinglePlayerRanking[] => {
+  if (Array.isArray(resp)) return resp as SinglePlayerRanking[]
+  if (resp && typeof resp === 'object' && 'results' in (resp as Record<string, unknown>)) {
+    const results = (resp as Record<string, unknown>).results as unknown
+    return Array.isArray(results) ? (results as SinglePlayerRanking[]) : []
+  }
+  return []
+}
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+const fetchData = async (slow = false) => {
   loading.value = true
   try {
-    const data = await getSinglePlayerRanking({ limit: 100, source: '3dm' })
-    rankings.value = Array.isArray(data) ? data : data?.results || []
+    const resp = (await getSinglePlayerRanking({ limit: 100, source: '3dm' })) as unknown
+    rankings.value = toRankingArray(resp)
   } finally {
+    if (slow) await delay(2400)
     loading.value = false
+  }
+}
+
+const handleRefresh = async () => {
+  if (refreshing.value) return
+  refreshing.value = true
+  showRefreshOverlay.value = true
+  refreshStep.value = 0
+  progress.value = 0
+  if (progressTimer) clearInterval(progressTimer)
+  progressTimer = window.setInterval(() => {
+    progress.value = Math.min(progress.value + 1, 95)
+  }, 150)
+  try {
+    const start = Date.now()
+    refreshStep.value = 1
+    await delay(1600)
+    refreshStep.value = 2
+    await fetchData(true)
+    await delay(1600)
+    refreshStep.value = 3
+    await delay(1600)
+    refreshStep.value = 4
+
+    const MIN_REFRESH_MS = 12000
+    const elapsed = Date.now() - start
+    if (elapsed < MIN_REFRESH_MS) {
+      await delay(MIN_REFRESH_MS - elapsed)
+    }
+    await delay(3000)
+    progress.value = 100
+    ElMessage.success('榜单刷新完成')
+  } catch (e) {
+    ElMessage.error('榜单刷新失败')
+  } finally {
+    if (progressTimer) {
+      clearInterval(progressTimer)
+      progressTimer = null
+    }
+    refreshing.value = false
+    setTimeout(() => {
+      showRefreshOverlay.value = false
+      refreshStep.value = 0
+    }, 800)
   }
 }
 
@@ -268,6 +356,38 @@ onMounted(fetchData)
     }
   }
 }
+
+/* 覆盖层与动画 */
+.overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.4s ease; }
+.overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
+
+.refresh-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.overlay-card {
+  width: min(720px, 92vw);
+  background: var(--el-bg-color);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  padding: 24px;
+}
+
+.overlay-title { margin: 0 0 6px; font-size: 20px; font-weight: 800; }
+.overlay-sub { margin: 0 0 16px; font-size: 14px; color: var(--el-text-color-secondary); }
+.overlay-progress { margin: 14px 0; }
+.overlay-spinner { display: flex; align-items: center; gap: 8px; color: var(--el-text-color-secondary); }
+
+.spinning { animation: spin 0.8s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .ranking-row {

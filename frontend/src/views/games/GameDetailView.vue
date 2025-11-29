@@ -5,7 +5,14 @@
       <el-card class="game-header">
         <el-row :gutter="24">
           <el-col :xs="24" :sm="8">
-            <img :src="game.cover_image" alt="游戏封面" class="game-cover" referrerpolicy="no-referrer" @error="handleImageError" />
+            <img 
+              :src="game.cover_image" 
+              alt="游戏封面" 
+              class="game-cover" 
+              referrerpolicy="no-referrer" 
+              @error="(e) => handleImageError(e)"
+              loading="lazy"
+            />
           </el-col>
           
           <el-col :xs="24" :sm="16">
@@ -57,6 +64,12 @@
               </div>
               
               <div class="stat-item">
+                <el-icon><StarFilled /></el-icon>
+                <div class="stat-value">{{ formatNumber(game.like_count || 0) }}</div>
+                <div class="stat-label">点赞数</div>
+              </div>
+              
+              <div class="stat-item">
                 <el-icon><ChatDotRound /></el-icon>
                 <div class="stat-value">{{ formatNumber(game.review_count) }}</div>
                 <div class="stat-label">评价数</div>
@@ -80,6 +93,16 @@
                 {{ game.is_collected ? '已收藏' : '收藏游戏' }}
               </el-button>
               
+              <el-button
+                size="large"
+                :type="game.is_liked ? 'success' : 'default'"
+                :icon="game.is_liked ? StarFilled : Star"
+                @click="toggleLike"
+                :loading="liking"
+              >
+                {{ game.is_liked ? '已点赞' : '点赞游戏' }} ({{ formatNumber(game.like_count || 0) }})
+              </el-button>
+              
               <el-button size="large" :icon="Share">分享</el-button>
             </div>
           </el-col>
@@ -98,15 +121,16 @@
             <h3>游戏截图</h3>
             <div class="screenshots" v-if="game.screenshots && game.screenshots.length > 0">
               <el-image
-                v-for="(screenshot, index) in game.screenshots"
+                v-for="(screenshot, index) in screenshotUrls"
                 :key="index"
-                :src="screenshot"
-                :preview-src-list="game.screenshots"
+                :src="screenshot.image_url"
+                :preview-src-list="screenshotUrls.map(s => s.image_url)"
                 :initial-index="index"
                 fit="cover"
                 class="screenshot-img"
               />
             </div>
+            <el-empty v-else description="暂无截图" />
           </el-card>
         </el-tab-pane>
         
@@ -165,37 +189,139 @@
             </div>
           </el-card>
         </el-tab-pane>
+        <!-- 角色评论 -->
+        <el-tab-pane label="角色评论" name="comments">
+          <el-card class="comment-card">
+            <div class="comment-header">
+              <div class="comment-title">
+                <el-icon><ChatDotRound /></el-icon>
+                <h3>角色评论区</h3>
+              </div>
+              <div class="comment-controls">
+                <el-select
+                  v-model="commentOrdering"
+                  placeholder="排序"
+                  size="small"
+                  @change="fetchComments"
+                  style="width: 140px"
+                >
+                  <el-option label="按时间" value="time" />
+                  <el-option label="按热度" value="hot" />
+                </el-select>
+                <el-radio-group v-model="commentRoleFilter" size="small">
+                  <el-radio-button label="all">全部</el-radio-button>
+                  <el-radio-button label="player">玩家</el-radio-button>
+                  <el-radio-button label="creator">创作者</el-radio-button>
+                  <el-radio-button label="publisher">发行商</el-radio-button>
+                  <el-radio-button label="admin">管理员</el-radio-button>
+                </el-radio-group>
+              </div>
+            </div>
+            
+            <div class="comment-editor" v-if="userStore.isLoggedIn">
+              <div class="editor-meta">
+                以 <strong>{{ getRoleLabel(userStore.userInfo?.role) }}</strong> 身份发表评论
+              </div>
+              <el-input
+                ref="commentInputRef"
+                v-model="commentContent"
+                type="textarea"
+                :rows="4"
+                maxlength="500"
+                show-word-limit
+                placeholder="分享您的体验或专业观点..."
+              />
+              <div class="reply-hint" v-if="replyTo">
+                回复 <strong>{{ replyTo.user?.username }}</strong>
+                <el-button text type="primary" size="small" @click="clearReply">取消</el-button>
+              </div>
+              <div class="comment-actions">
+                <el-button type="primary" :loading="commentSubmitting" @click="submitComment">
+                  发布评论
+                </el-button>
+              </div>
+            </div>
+            <div v-else class="login-tip">
+              <el-button type="primary" @click="router.push('/auth/login')">登录后发表评论</el-button>
+            </div>
+            
+            <el-skeleton :loading="commentLoading" animated :rows="4">
+              <div v-if="filteredComments.length === 0" class="empty">
+                当前筛选下暂无评论，成为第一位分享观点的{{ commentRoleFilter === 'all' ? '用户' : getRoleLabel(commentRoleFilter) }}吧！
+              </div>
+              <div v-else class="comment-list">
+                <CommentNode
+                  v-for="item in filteredComments"
+                  :key="item.id"
+                  :comment="item"
+                  :depth="1"
+                  :current-user-id="userStore.userInfo?.id"
+                  :is-admin="userStore.isAdmin"
+                  @reply="setReply"
+                  @delete="deleteCommentItem"
+                />
+              </div>
+            </el-skeleton>
+          </el-card>
+        </el-tab-pane>
       </el-tabs>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { getGameDetail, toggleGameCollection } from '@/api/game'
+import { getGameDetail, toggleGameCollection, getGameScreenshots } from '@/api/game'
 import { getStrategyList } from '@/api/content'
+import { getComments, createComment, deleteComment as deleteCommentApi, toggleReaction } from '@/api/community'
 import { getCategoryLabel } from '@/constants/categories'
-import { getGameCoverUrl, handleImageError } from '@/utils/image'
+import { handleImageError } from '@/utils/image'
 import { Download, User, ChatDotRound, TrendCharts, Star, StarFilled, Share, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts/core'
+import CommentNode from '@/components/CommentNode.vue'
+import type { Comment } from '@/types/community'
+import type { GameDetail } from '@/types/game'
+import type { Strategy } from '@/types/content'
+
+type RoleFilter = 'all' | 'player' | 'creator' | 'publisher' | 'admin'
+type WithResults<T> = { results?: T[]; count?: number }
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const game = ref<any>(null)
+const game = ref<GameDetail | null>(null)
 const loading = ref(false)
 const collecting = ref(false)
 const activeTab = ref('description')
 
-const strategies = ref<any[]>([])
+const strategies = ref<Strategy[]>([])
 const strategiesLoading = ref(false)
+const screenshotUrls = ref<any[]>([])
 
 const staticHeatChartRef = ref<HTMLElement>()
 const heatTrendChartRef = ref<HTMLElement>()
+
+const comments = ref<Comment[]>([])
+const commentLoading = ref(false)
+const commentSubmitting = ref(false)
+const commentsLoaded = ref(false)
+const commentContent = ref('')
+const commentOrdering = ref<'time' | 'hot'>('time')
+const commentRoleFilter = ref<RoleFilter>('all')
+const replyTo = ref<Comment | null>(null)
+const commentInputRef = ref<{ focus?: () => void } | null>(null)
+const liking = ref(false)
+
+const filteredComments = computed(() => {
+  if (commentRoleFilter.value === 'all') {
+    return comments.value
+  }
+  return filterCommentTree(comments.value, commentRoleFilter.value)
+})
 
 // 格式化数字
 const formatNumber = (num: number) => {
@@ -226,6 +352,39 @@ const formatTime = (time: string) => {
   return date.toLocaleDateString()
 }
 
+const roleLabelMap: Record<string, string> = {
+  player: '玩家',
+  creator: '创作者',
+  publisher: '发行商',
+  admin: '管理员'
+}
+
+const getRoleLabel = (role?: string | null) => {
+  if (!role) return '用户'
+  return roleLabelMap[role] || '用户'
+}
+
+const filterCommentTree = (nodes: Comment[], role: RoleFilter): Comment[] => {
+  return nodes.reduce<Comment[]>((acc, item) => {
+    const replies = item.replies ? filterCommentTree(item.replies, role) : []
+    const matches = item.user?.role === role
+    if (matches || replies.length > 0) {
+      acc.push({
+        ...item,
+        replies
+      })
+    }
+    return acc
+  }, [])
+}
+
+const resolveErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) {
+    return error.message || fallback
+  }
+  return fallback
+}
+
 // 获取游戏详情
 const fetchGameDetail = async () => {
   const gameId = Number(route.params.id)
@@ -240,8 +399,8 @@ const fetchGameDetail = async () => {
   
   try {
     game.value = await getGameDetail(gameId)
-  } catch (error: any) {
-    ElMessage.error(error.message || '获取游戏详情失败')
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '获取游戏详情失败'))
     router.back()
   } finally {
     loading.value = false
@@ -259,12 +418,146 @@ const fetchStrategies = async () => {
       game: game.value.id,
       page_size: 5,
       ordering: '-created_at'
-    })
-    strategies.value = response.results || []
-  } catch (error: any) {
+    }) as WithResults<Strategy> | Strategy[]
+    strategies.value = extractResults<Strategy>(response)
+  } catch (error: unknown) {
     console.error('获取攻略失败:', error)
   } finally {
     strategiesLoading.value = false
+  }
+}
+
+// 获取游戏截图
+const fetchScreenshots = async () => {
+  if (!game.value) return
+  
+  try {
+    const response = await getGameScreenshots(game.value.id)
+    screenshotUrls.value = Array.isArray(response) ? response : response.results || []
+  } catch (error: unknown) {
+    console.error('获取截图失败:', error)
+  }
+}
+
+const extractResults = <T>(payload: WithResults<T> | T[] | undefined): T[] => {
+  if (!payload) return []
+  if (Array.isArray(payload)) return payload
+  return Array.isArray(payload.results) ? payload.results : []
+}
+
+const fetchComments = async () => {
+  if (!game.value) return
+  commentLoading.value = true
+  try {
+    const response = await getComments({
+      target: 'game',
+      target_id: game.value.id,
+      ordering: commentOrdering.value === 'hot' ? 'hot' : undefined
+    }) as WithResults<Comment> | Comment[]
+    const list = extractResults<Comment>(response)
+    comments.value = list
+    commentsLoaded.value = true
+    if (game.value) {
+      const total = Array.isArray(response)
+        ? response.length
+        : typeof response.count === 'number'
+          ? response.count
+          : list.length
+      game.value.review_count = total
+    }
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '获取评论失败'))
+  } finally {
+    commentLoading.value = false
+  }
+}
+
+const submitComment = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    router.push('/auth/login')
+    return
+  }
+  if (!commentContent.value.trim() || !game.value) {
+    ElMessage.warning('请输入评论内容')
+    return
+  }
+  commentSubmitting.value = true
+  try {
+    await createComment({
+      content: commentContent.value.trim(),
+      target: 'game',
+      target_id: game.value.id,
+      parent: replyTo.value?.id
+    })
+    commentContent.value = ''
+    replyTo.value = null
+    ElMessage.success('评论成功')
+    if (game.value) {
+      game.value.review_count = (game.value.review_count || 0) + 1
+    }
+    fetchComments()
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '评论失败'))
+  } finally {
+    commentSubmitting.value = false
+  }
+}
+
+const setReply = (comment: Comment) => {
+  replyTo.value = comment
+  nextTick(() => {
+    commentInputRef.value?.focus?.()
+  })
+}
+
+const clearReply = () => {
+  replyTo.value = null
+}
+
+const deleteCommentItem = async (comment: Comment) => {
+  try {
+    await deleteCommentApi(comment.id)
+    ElMessage.success('已删除')
+    if (game.value && game.value.review_count) {
+      game.value.review_count = Math.max(0, game.value.review_count - 1)
+    }
+    fetchComments()
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
+  }
+}
+
+const toggleLike = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    router.push('/auth/login')
+    return
+  }
+  if (!game.value || liking.value) return
+  liking.value = true
+  try {
+    const response = await toggleReaction({
+      content_type: 'game',
+      object_id: game.value.id,
+      reaction_type: 'like'
+    })
+    const result = response as { is_liked?: boolean; like_count?: number; message?: string }
+    if (typeof result.is_liked === 'boolean') {
+      game.value.is_liked = result.is_liked
+    }
+    if (typeof result.like_count === 'number') {
+      game.value.like_count = result.like_count
+    } else if (game.value.is_liked) {
+      game.value.like_count = (game.value.like_count || 0) + 1
+    } else if (game.value.like_count) {
+      game.value.like_count = Math.max(0, game.value.like_count - 1)
+    }
+    ElMessage.success(result.message || (game.value.is_liked ? '点赞成功' : '已取消点赞'))
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
+  } finally {
+    liking.value = false
   }
 }
 
@@ -281,12 +574,12 @@ const toggleCollection = async () => {
   collecting.value = true
   
   try {
-    const response = await toggleGameCollection(game.value.id)
+    const response = await toggleGameCollection(game.value.id) as { is_collected: boolean; message?: string }
     // 使用后端返回的收藏状态
     game.value.is_collected = response.is_collected
     ElMessage.success(response.message || (response.is_collected ? '收藏成功' : '取消收藏成功'))
-  } catch (error: any) {
-    ElMessage.error(error.message || '操作失败')
+  } catch (error: unknown) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   } finally {
     collecting.value = false
   }
@@ -296,6 +589,12 @@ const toggleCollection = async () => {
 const goToStrategy = (id: number) => {
   router.push(`/strategies/${id}`)
 }
+
+watch(activeTab, (tab) => {
+  if (tab === 'comments' && !commentsLoaded.value) {
+    fetchComments()
+  }
+})
 
 // 初始化静态热度图表
 const initStaticHeatChart = () => {
@@ -369,6 +668,7 @@ const initHeatTrendChart = () => {
 onMounted(async () => {
   await fetchGameDetail()
   await fetchStrategies()
+  await fetchScreenshots()
   
   await nextTick()
   initStaticHeatChart()
@@ -537,13 +837,73 @@ onMounted(async () => {
         margin-bottom: 16px;
       }
     }
+
+    .comment-card {
+      .comment-header {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+
+        .comment-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+
+          h3 {
+            margin: 0;
+          }
+        }
+
+        .comment-controls {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+      }
+
+      .comment-editor {
+        margin-bottom: 20px;
+        .editor-meta {
+          margin-bottom: 8px;
+          color: var(--el-text-color-secondary);
+        }
+      }
+
+      .reply-hint {
+        margin: 8px 0;
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .comment-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+
+      .login-tip {
+        text-align: center;
+        margin: 20px 0;
+      }
+
+      .comment-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .empty {
+        text-align: center;
+        color: var(--el-text-color-secondary);
+        padding: 24px 0;
+      }
+    }
   }
 }
 </style>
-
-
-
-
-
-
-

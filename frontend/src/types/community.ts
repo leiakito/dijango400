@@ -41,12 +41,15 @@ export interface Comment {
   is_liked?: boolean
   created_at: string
   updated_at: string
+  replies?: Comment[]
 }
 
 export interface CommentForm {
   game?: number
   post?: number
   strategy?: number
+  target?: 'post' | 'strategy' | 'game'
+  target_id?: number
   parent?: number
   content: string
 }
@@ -91,6 +94,8 @@ export interface Feedback {
   status: 'pending' | 'processing' | 'resolved'
   created_at: string
 }
+
+
 
 
 

@@ -19,6 +19,14 @@ export function getGameDetail(id: number): Promise<GameDetail> {
 }
 
 /**
+ * 创建游戏
+ */
+export function createGame(data: (Partial<GameDetail> & { publisher: number }) | FormData) {
+  const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
+  return request.post('/games/', data, config)
+}
+
+/**
  * 获取推荐游戏（个性化推荐）
  */
 export function getRecommendedGames(params?: any) {
@@ -81,3 +89,32 @@ export function searchGames(keyword: string, params?: any) {
   return request.get('/games/', { params: { ...params, search: keyword } })
 }
 
+/**
+ * 上传游戏截图
+ */
+export function uploadGameScreenshot(gameId: number, formData: FormData) {
+  return request.post(`/games/${gameId}/upload_screenshot/`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+/**
+ * 获取游戏截图列表
+ */
+export function getGameScreenshots(gameId: number) {
+  return request.get('/games/screenshots/', { params: { game_id: gameId } })
+}
+
+/**
+ * 删除游戏截图
+ */
+export function deleteGameScreenshot(screenshotId: number) {
+  return request.delete(`/games/screenshots/${screenshotId}/`)
+}
+
+/**
+ * 更新游戏截图
+ */
+export function updateGameScreenshot(screenshotId: number, data: any) {
+  return request.patch(`/games/screenshots/${screenshotId}/`, data)
+}

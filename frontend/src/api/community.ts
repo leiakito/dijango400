@@ -42,7 +42,7 @@ export function deletePost(id: number) {
 /**
  * 获取评论列表
  */
-export function getComments(params: { post?: number; game?: number; strategy?: number; target?: string; target_id?: number; ordering?: string }) {
+export function getComments(params: { post?: number; game?: number; strategy?: number; target?: 'post' | 'game' | 'strategy'; target_id?: number; ordering?: 'hot' | string }) {
   return request.get('/community/comments/', { params })
 }
 

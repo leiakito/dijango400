@@ -19,7 +19,7 @@
     </el-alert>
     
     <!-- 推荐游戏列表 -->
-    <div v-loading="loading">
+    <section class="module-block" v-loading="loading">
       <el-row :gutter="20">
         <el-col
           :xs="24"
@@ -93,22 +93,141 @@
           浏览游戏
         </el-button>
       </el-empty>
-    </div>
+    </section>
+
+    <!-- 最热榜单 -->
+    <section class="module-block extra-block" v-loading="hotLoading">
+      <div class="section-header">
+        <div class="section-title">
+          <el-icon><Sunny /></el-icon>
+          <h3>最热游戏榜</h3>
+        </div>
+        <el-link type="primary" :underline="false" @click="router.push('/games/list')">
+          查看更多
+        </el-link>
+      </div>
+      <div class="compact-list">
+        <div
+          v-for="(game, index) in hotGames"
+          :key="game.id"
+          class="compact-game-card"
+          @click="goToDetail(game.id)"
+        >
+          <span class="rank-badge">TOP {{ index + 1 }}</span>
+          <div class="compact-cover">
+            <img
+              :src="getGameCoverUrl(game.cover_image)"
+              :alt="game.name"
+              @error="handleImageError"
+            />
+          </div>
+          <div class="compact-info">
+            <div class="compact-title" :title="game.name">{{ game.name }}</div>
+            <div class="compact-meta">
+              <el-tag size="small">{{ getCategoryLabel(game.category) }}</el-tag>
+              <span class="stat">
+                <el-icon><TrendCharts /></el-icon>
+                {{ formatNumber(game.heat_total || 0) }}
+              </span>
+            </div>
+            <div class="compact-stats">
+              <span>
+                <el-icon><StarFilled /></el-icon>
+                {{ game.rating === null || game.rating === undefined ? 'N/A' : Number(game.rating).toFixed(1) }}
+              </span>
+              <span>
+                <el-icon><InfoFilled /></el-icon>
+                静态热度 {{ formatNumber(game.download_count || 0) }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <el-empty 
+          v-if="!hotLoading && hotGames.length === 0" 
+          description="暂无最热游戏数据"
+        />
+      </div>
+    </section>
+
+    <!-- 最新上架 -->
+    <section class="module-block extra-block" v-loading="latestLoading">
+      <div class="section-header">
+        <div class="section-title">
+          <el-icon><Clock /></el-icon>
+          <h3>最新上架</h3>
+        </div>
+        <el-link type="primary" :underline="false" @click="router.push('/games/list')">
+          查看更多
+        </el-link>
+      </div>
+      <div class="compact-list">
+        <div
+          v-for="game in latestGames"
+          :key="game.id"
+          class="compact-game-card"
+          @click="goToDetail(game.id)"
+        >
+          <div class="compact-cover">
+            <img
+              :src="getGameCoverUrl(game.cover_image)"
+              :alt="game.name"
+              @error="handleImageError"
+            />
+          </div>
+          <div class="compact-info">
+            <div class="compact-title" :title="game.name">{{ game.name }}</div>
+            <div class="compact-meta">
+              <el-tag size="small">{{ getCategoryLabel(game.category) }}</el-tag>
+              <span class="stat">
+                <el-icon><Calendar /></el-icon>
+                {{ formatDate(game.release_date) }}
+              </span>
+            </div>
+            <div class="compact-stats">
+              <span>
+                <el-icon><StarFilled /></el-icon>
+                {{ game.rating === null || game.rating === undefined ? 'N/A' : Number(game.rating).toFixed(1) }}
+              </span>
+              <span>
+                <el-icon><TrendCharts /></el-icon>
+                {{ formatNumber(game.follow_count || 0) }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <el-empty 
+          v-if="!latestLoading && latestGames.length === 0" 
+          description="暂无最新游戏数据"
+        />
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getRecommendedGames } from '@/api/game'
-import { StarFilled, InfoFilled } from '@element-plus/icons-vue'
+import { getRecommendedGames, getHotGames, getLatestGames } from '@/api/game'
+import { StarFilled, InfoFilled, Sunny, Clock, TrendCharts, Calendar } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getGameCoverUrl, handleImageError } from '@/utils/image'
+import type { Game, GameDetail } from '@/types/game'
+
+interface PersonalizedRecommendation {
+  id: number
+  score: number
+  game: GameDetail
+  reason?: string
+}
 
 const router = useRouter()
 
 const loading = ref(false)
-const recommendedGames = ref<any[]>([])
+const recommendedGames = ref<PersonalizedRecommendation[]>([])
+const hotGames = ref<Game[]>([])
+const latestGames = ref<Game[]>([])
+const hotLoading = ref(false)
+const latestLoading = ref(false)
 
 const getCategoryLabel = (category: string) => {
   const map: Record<string, string> = {
@@ -122,7 +241,7 @@ const getCategoryLabel = (category: string) => {
   return map[category] || category
 }
 
-const getRecommendReason = (item: any) => {
+const getRecommendReason = (item: PersonalizedRecommendation) => {
   if (item.score > 0.8) {
     return '强烈推荐！非常符合您的兴趣'
   } else if (item.score > 0.6) {
@@ -136,15 +255,15 @@ const fetchRecommendations = async () => {
   loading.value = true
   
   try {
-    const response = await getRecommendedGames({ top: 12 })
+    const response = await getRecommendedGames({ top: 12 }) as { results?: PersonalizedRecommendation[] }
     recommendedGames.value = response.results || []
     
     if (recommendedGames.value.length === 0) {
       console.log('暂无推荐数据，建议先与游戏互动（收藏、点赞等）')
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取推荐失败:', error)
-    ElMessage.error(error.message || '获取推荐失败')
+    ElMessage.error(error instanceof Error ? error.message : '获取推荐失败')
   } finally {
     loading.value = false
   }
@@ -154,13 +273,88 @@ const goToDetail = (id: number) => {
   router.push(`/games/${id}`)
 }
 
+const fetchHotList = async () => {
+  hotLoading.value = true
+  try {
+    const response = await getHotGames({ top: 6 })
+    hotGames.value = extractResults<Game>(response)
+  } catch (error) {
+    console.error('获取最热游戏失败:', error)
+    hotGames.value = []
+  } finally {
+    hotLoading.value = false
+  }
+}
+
+const fetchLatestList = async () => {
+  latestLoading.value = true
+  try {
+    const response = await getLatestGames({ page_size: 6 })
+    latestGames.value = extractResults<Game>(response)
+  } catch (error) {
+    console.error('获取最新游戏失败:', error)
+    latestGames.value = []
+  } finally {
+    latestLoading.value = false
+  }
+}
+
+const formatNumber = (num?: number | null) => {
+  if (!num) return '0'
+  if (num >= 10000) return (num / 10000).toFixed(1) + 'w'
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
+  return num.toString()
+}
+
+const formatDate = (dateStr?: string | null) => {
+  if (!dateStr) return '未公开'
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return '待定'
+  return date.toLocaleDateString()
+}
+
+const extractResults = <T>(payload: unknown): T[] => {
+  if (!payload) return []
+  if (Array.isArray(payload)) return payload as T[]
+  if (typeof payload === 'object' && payload !== null) {
+    const listPayload = payload as { results?: unknown }
+    if (Array.isArray(listPayload.results)) {
+      return listPayload.results as T[]
+    }
+  }
+  return []
+}
+
 onMounted(() => {
   fetchRecommendations()
+  fetchHotList()
+  fetchLatestList()
 })
 </script>
 
 <style scoped lang="scss">
 .recommend-view {
+  .module-block {
+    margin-bottom: 40px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      h3 {
+        margin: 0;
+      }
+    }
+  }
+
   .game-card {
     cursor: pointer;
     transition: transform 0.3s, box-shadow 0.3s;
@@ -254,12 +448,99 @@ onMounted(() => {
       }
     }
   }
+
+  .extra-block {
+    .compact-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .compact-game-card {
+      position: relative;
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--el-border-color-light);
+      border-radius: 12px;
+      background: var(--el-bg-color);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+      }
+
+      .rank-badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        font-size: 12px;
+        font-weight: bold;
+        color: var(--el-color-primary);
+      }
+
+      .compact-cover {
+        width: 96px;
+        height: 120px;
+        border-radius: 8px;
+        overflow: hidden;
+        flex-shrink: 0;
+
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+      }
+
+      .compact-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .compact-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--el-text-color-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .compact-meta {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+
+          .stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--el-text-color-secondary);
+          }
+        }
+
+        .compact-stats {
+          display: flex;
+          gap: 16px;
+          font-size: 13px;
+          color: var(--el-text-color-regular);
+
+          span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
+        }
+      }
+    }
+  }
 }
 </style>
-
-
-
-
 
 
 

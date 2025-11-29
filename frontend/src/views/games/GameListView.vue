@@ -81,7 +81,8 @@
                 :src="getGameCoverUrl(game.cover_image)" 
                 :alt="game.name"
                 referrerpolicy="no-referrer"
-                @error="handleImageError"
+                @error="(e) => handleImageError(e)"
+                loading="lazy"
               />
             <div class="game-overlay">
               <el-button type="primary" size="large" round>
@@ -92,7 +93,7 @@
             <!-- 评分标签 -->
             <div class="rating-badge">
               <el-icon><StarFilled /></el-icon>
-              <span>{{ game.rating || 'N/A' }}</span>
+              <span>{{ game.rating === null || game.rating === undefined ? 'N/A' : Number(game.rating).toFixed(1) }}</span>
             </div>
             <!-- 分类标签 -->
             <div class="category-badge">

@@ -135,6 +135,11 @@ class Game(models.Model):
         default=0,
         db_index=True
     )
+    like_count = models.IntegerField(
+        _('点赞数'),
+        default=0,
+        db_index=True
+    )
     review_count = models.IntegerField(
         _('评价数'),
         default=0,

@@ -6,6 +6,14 @@
     <div class="comment-body">
       <div class="comment-meta">
         <span class="name">{{ comment.user?.username }}</span>
+        <el-tag
+          v-if="comment.user?.role"
+          size="small"
+          type="info"
+          class="role-tag"
+        >
+          {{ getRoleLabel(comment.user.role) }}
+        </el-tag>
         <span class="time">{{ formatTime(comment.created_at) }}</span>
       </div>
       <div class="comment-text">{{ comment.content }}</div>
@@ -50,9 +58,21 @@ defineProps<{
   isAdmin?: boolean
 }>()
 
+const roleLabels: Record<string, string> = {
+  player: '玩家',
+  creator: '创作者',
+  publisher: '发行商',
+  admin: '管理员'
+}
+
 const formatTime = (time?: string) => {
   if (!time) return ''
   return new Date(time).toLocaleString()
+}
+
+const getRoleLabel = (role?: string) => {
+  if (!role) return '用户'
+  return roleLabels[role] || '用户'
 }
 </script>
 
@@ -72,6 +92,11 @@ const formatTime = (time?: string) => {
   gap: 8px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+  align-items: center;
+
+  .role-tag {
+    border-radius: 6px;
+  }
 }
 .comment-text {
   margin: 6px 0;

@@ -40,6 +40,18 @@ const routes: RouteRecordRaw[] = [
             meta: { title: '单机游戏排行榜' }
           },
           {
+            path: 'create',
+            name: 'GameCreate',
+            component: () => import('@/views/games/GameCreateEditView.vue'),
+            meta: { title: '创建游戏', requiresAuth: true, roles: ['publisher', 'admin'] }
+          },
+          {
+            path: 'edit/:id',
+            name: 'GameEdit',
+            component: () => import('@/views/games/GameCreateEditView.vue'),
+            meta: { title: '编辑游戏', requiresAuth: true, roles: ['publisher', 'admin'] }
+          },
+          {
             path: ':id',
             name: 'GameDetail',
             component: () => import('@/views/games/GameDetailView.vue'),

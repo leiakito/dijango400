@@ -27,12 +27,14 @@ export interface Game {
   rating: number
   download_count: number
   follow_count: number
+  like_count: number
   review_count: number
   cover_image?: string | null
   name_en?: string | null
   heat_total: number
   release_date?: string | null
   is_collected?: boolean
+  is_liked?: boolean
 }
 
 export interface GameScreenshot {
