@@ -32,7 +32,7 @@
         <p class="subtext">数据来源：3DM（自动抓取），点击可跳转专题或平台内详情</p>
       </div>
       <div class="actions">
-        <el-button :icon="Refresh" @click="handleRefresh" :loading="loading || refreshing">手动刷新</el-button>
+        <el-button v-if="userStore.isAdmin" :icon="Refresh" @click="handleRefresh" :loading="loading || refreshing">手动刷新</el-button>
       </div>
     </div>
 
@@ -114,6 +114,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import { getSinglePlayerRanking } from '@/api/game'
 import { getPlaceholderImage, handleImageError } from '@/utils/image'
 import type { SinglePlayerRanking } from '@/types/game'
@@ -127,6 +128,7 @@ const showRefreshOverlay = ref(false)
 const refreshStep = ref(0)
 const progress = ref(0)
 let progressTimer: number | null = null
+const userStore = useUserStore()
 const router = useRouter()
 
 const formatNumber = (num?: number | null) => {
@@ -175,6 +177,7 @@ const fetchData = async (slow = false) => {
 }
 
 const handleRefresh = async () => {
+  if (!userStore.isAdmin) { ElMessage.warning('仅管理员可手动刷新'); return }
   if (refreshing.value) return
   refreshing.value = true
   showRefreshOverlay.value = true

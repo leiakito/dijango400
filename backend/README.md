@@ -95,6 +95,13 @@ python manage.py runserver
 
 # Celery Worker
 celery -A config worker -l info
+
+# Windows 开发环境（推荐）
+# Celery 在 Windows 上不支持 prefork 多进程池，可能出现 WinError 5。
+# 请使用单进程池运行以避免进程间同步权限问题：
+# PowerShell / CMD
+celery -A config worker -l info -P solo
+
 cd backend
 ./venv/bin/celery -A config worker -l info -Q analytics,recommendations,community,system,crawl,celery
 
