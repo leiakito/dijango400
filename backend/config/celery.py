@@ -18,10 +18,11 @@ app.autodiscover_tasks()
 
 # Celery Beat Schedule - 定时任务
 app.conf.beat_schedule = {
-    # 每日凌晨2点执行爬虫任务
+    # 每10分钟执行一次爬虫任务（开发/测试环境使用）
+    # 生产环境建议改为：crontab(hour=2, minute=0) 每日凌晨2点执行
     'crawl-external-data': {
         'task': 'apps.analytics.tasks.crawl_external_data',
-        'schedule': crontab(hour=2, minute=0),
+        'schedule': crontab(minute='*/10'),  # 每10分钟执行一次
         'options': {'queue': 'crawl'}
     },
     # 每日凌晨3点计算热度
