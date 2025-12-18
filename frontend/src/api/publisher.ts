@@ -25,3 +25,18 @@ export function getPublisherGames(params?: any) {
 export function updatePublisherGame(gameId: number, data: any) {
   return request.patch<GameDetail>(`/games/${gameId}/`, data)
 }
+
+export interface KeywordAnalysis {
+  publisher: {
+    id: number
+    name: string
+  }
+  keywords: Array<{
+    word: string
+    frequency: number
+  }>
+}
+
+export function getPublisherKeywords(params: { publisher: number | string; game?: number | string }) {
+  return request.get<KeywordAnalysis>('/analytics/publisher/keywords/', { params })
+}

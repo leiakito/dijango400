@@ -11,4 +11,5 @@ urlpatterns = [
     path('overview/', views.overview, name='analytics-overview'),
     path('publisher/', views.publisher_overview, name='analytics-publisher'),
     path('heatmap/', views.heatmap, name='analytics-heatmap'),
+    path('publisher/keywords/', views.publisher_keywords, name='analytics-publisher-keywords'),
 ] + router.urls

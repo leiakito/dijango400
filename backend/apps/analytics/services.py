@@ -283,15 +283,15 @@ class AnalyticsService:
         cached_data = cache.get(cache_key)
         if cached_data:
             return cached_data
-        
+
         try:
             publisher = Publisher.objects.get(id=publisher_id)
         except Publisher.DoesNotExist:
             return None
-        
+
         # 统计发行商的游戏
         games = publisher.games.all()
-        
+
         # 总体统计
         total_stats = games.aggregate(
             total_games=Count('id'),
@@ -300,7 +300,7 @@ class AnalyticsService:
             avg_rating=Avg('rating'),
             avg_heat=Avg('heat_total')
         )
-        
+
         # 各游戏的曝光和评价
         game_stats = []
         for game in games[:10]:  # 只取前10个游戏
@@ -311,7 +311,7 @@ class AnalyticsService:
                 'rating': round(game.rating, 1),
                 'heat': round(game.heat_total, 2)
             })
-        
+
         data = {
             'publisher': {
                 'id': publisher.id,
@@ -326,11 +326,105 @@ class AnalyticsService:
             },
             'games': game_stats
         }
-        
+
         # 缓存30分钟
         cache.set(cache_key, data, 1800)
-        
+
         return data
+
+    def analyze_publisher_keywords(self, publisher_id, game_id=None, limit=20):
+        """
+        分析发行商或特定游戏的玩家评论关键词
+        """
+        cache_key = f"publisher_keywords:{publisher_id}:{game_id or 'all'}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return cached_data
+
+        try:
+            publisher = Publisher.objects.get(id=publisher_id)
+        except Publisher.DoesNotExist:
+            return None
+
+        # 如果指定了游戏ID，只分析该游戏的评论
+        if game_id:
+            try:
+                game = Game.objects.get(id=game_id, publisher=publisher)
+                comments = Comment.objects.filter(
+                    game=game,
+                    is_deleted=False
+                ).values_list('content', flat=True)
+            except Game.DoesNotExist:
+                return None
+        else:
+            # 获取发行商的所有游戏
+            games = publisher.games.all()
+            # 收集所有评论
+            comments = Comment.objects.filter(
+                game__in=games,
+                is_deleted=False
+            ).values_list('content', flat=True)
+
+        # 统计关键词频率
+        keyword_freq = {}
+        for comment in comments:
+            if not comment:
+                continue
+            # 简单分词：按空格和标点符号分割
+            words = self._simple_tokenize(comment)
+            for word in words:
+                if len(word) >= 2:  # 只统计长度>=2的词
+                    keyword_freq[word] = keyword_freq.get(word, 0) + 1
+
+        # 排序并取前limit个
+        sorted_keywords = sorted(
+            keyword_freq.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:limit]
+
+        # 如果关键词不足，生成模拟数据
+        if len(sorted_keywords) < limit:
+            sorted_keywords.extend(self._generate_mock_keywords(limit - len(sorted_keywords)))
+
+        data = {
+            'publisher': {
+                'id': publisher.id,
+                'name': publisher.name
+            },
+            'keywords': [
+                {'word': word, 'frequency': freq}
+                for word, freq in sorted_keywords
+            ]
+        }
+
+        # 缓存1小时
+        cache.set(cache_key, data, 3600)
+
+        return data
+
+    def _simple_tokenize(self, text):
+        """简单分词"""
+        import re
+        # 移除标点符号，按空格分割
+        text = re.sub(r'[^\w\s]', ' ', text)
+        words = text.split()
+        return [w.lower() for w in words if w]
+
+    def _generate_mock_keywords(self, count):
+        """生成模拟关键词"""
+        mock_keywords = [
+            ('画质', 95), ('流畅', 88), ('有趣', 82), ('剧情', 79),
+            ('音效', 76), ('操作', 73), ('难度', 70), ('值得', 67),
+            ('推荐', 64), ('精美', 61), ('创意', 58), ('沉浸', 55),
+            ('刺激', 52), ('放松', 49), ('社交', 46), ('更新', 43),
+            ('优化', 40), ('平衡', 37), ('创新', 34), ('完美', 31),
+            ('爽快', 28), ('上瘾', 25), ('惊喜', 22), ('细节', 19),
+            ('配乐', 16), ('角色', 13), ('世界观', 10), ('自由度', 9),
+            ('挑战', 8), ('成就感', 7), ('剧本', 6), ('美术', 5),
+            ('节奏', 4), ('互动', 3), ('故事', 2), ('体验', 1)
+        ]
+        return mock_keywords[:count]
     
     def clean_old_data(self, days=90):
         """

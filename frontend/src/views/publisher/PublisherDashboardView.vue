@@ -116,6 +116,25 @@
       </el-table>
     </el-card>
 
+    <el-card class="keywords-card" shadow="never" v-loading="keywordsLoading">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">分析</p>
+          <h3>玩家评价关键词</h3>
+        </div>
+      </div>
+      <div v-if="!keywords?.keywords?.length" class="empty">暂无关键词数据</div>
+      <div v-else class="keywords-container">
+        <div class="keywords-list">
+          <div v-for="(item, index) in keywords.keywords" :key="index" class="keyword-item">
+            <span class="keyword-rank">{{ index + 1 }}</span>
+            <span class="keyword-word">{{ item.word }}</span>
+            <span class="keyword-freq">{{ item.frequency }}</span>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <el-row :gutter="12" class="community-row">
       <el-col :xs="24" :md="12">
         <el-card shadow="never">
@@ -296,7 +315,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { useUserStore } from '@/stores/user'
 import { useGameStore } from '@/stores/game'
 import { GAME_CATEGORIES } from '@/constants/categories'
-import { getPublisherAnalytics, getHeatmapData, getPublisherGames, updatePublisherGame, type Paginated } from '@/api/publisher'
+import { getPublisherAnalytics, getHeatmapData, getPublisherGames, updatePublisherGame, getPublisherKeywords, type Paginated, type KeywordAnalysis } from '@/api/publisher'
 import { searchGames, getGameDetail, getGameList, createGame } from '@/api/game'
 import { getStrategyList } from '@/api/content'
 import { getPostList, getComments } from '@/api/community'
@@ -332,6 +351,8 @@ const communityLoading = ref(false)
 const games = ref<Game[]>([])
 const analytics = ref<PublisherAnalytics | null>(null)
 const heatmap = ref<HeatmapData | null>(null)
+const keywords = ref<KeywordAnalysis | null>(null)
+const keywordsLoading = ref(false)
 
 const selectedGame = ref<Game | null>(null)
 const strategies = ref<Strategy[]>([])
@@ -560,6 +581,23 @@ const loadHeatmap = async () => {
   }
 }
 
+const loadKeywords = async () => {
+  if (!selectedPublisherId.value) return
+  keywordsLoading.value = true
+  try {
+    const params: { publisher: number; game?: number } = { publisher: selectedPublisherId.value }
+    if (selectedGame.value?.id) {
+      params.game = selectedGame.value.id
+    }
+    const data = await getPublisherKeywords(params)
+    keywords.value = data
+  } catch (error) {
+    console.warn('keywords load failed', error)
+  } finally {
+    keywordsLoading.value = false
+  }
+}
+
 const refreshAll = async () => {
   pageLoading.value = true
   try {
@@ -568,7 +606,7 @@ const refreshAll = async () => {
     strategies.value = []
     posts.value = []
     comments.value = []
-    await Promise.all([loadGames(), loadAnalytics(), loadHeatmap()])
+    await Promise.all([loadGames(), loadAnalytics(), loadHeatmap(), loadKeywords()])
   } finally {
     pageLoading.value = false
   }
@@ -578,6 +616,7 @@ const selectGame = (game: Game) => {
   if (!game) return
   selectedGame.value = game
   fetchCommunity()
+  loadKeywords()
 }
 
 const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
@@ -1113,6 +1152,52 @@ watch(
     margin: 0;
     font-size: 12px;
     color: var(--el-text-color-secondary);
+  }
+}
+
+.keywords-card {
+  margin-bottom: 12px;
+
+  .keywords-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .keywords-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    width: 100%;
+  }
+
+  .keyword-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border-radius: 6px;
+    color: white;
+    font-size: 13px;
+
+    .keyword-rank {
+      font-weight: 700;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    .keyword-word {
+      flex: 1;
+      font-weight: 600;
+    }
+
+    .keyword-freq {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
   }
 }
 </style>

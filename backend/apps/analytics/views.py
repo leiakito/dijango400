@@ -101,3 +101,25 @@ def heatmap(request):
     """热度分布热力图"""
     data = analytics_service.generate_heatmap_data()
     return Response(data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminOrPublisher])
+def publisher_keywords(request):
+    """发行商游戏评论关键词分析"""
+    publisher_id = request.query_params.get('publisher')
+    game_id = request.query_params.get('game')
+
+    if not publisher_id:
+        return Response({'detail': 'publisher 参数必填'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        publisher_id = int(publisher_id)
+        game_id = int(game_id) if game_id else None
+    except (TypeError, ValueError):
+        return Response({'detail': '参数错误'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = analytics_service.analyze_publisher_keywords(publisher_id, game_id)
+    if not data:
+        return Response({'detail': '找不到数据'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(data, status=status.HTTP_200_OK)
